@@ -36,6 +36,7 @@ def create_app(config_class=Config):
     from .api.reply import reply_bp
     from .api.warning import warning_bp
     from .api.admin import admin_bp
+    from .api.dashboard import dashboard_bp
 
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
     app.register_blueprint(user_bp, url_prefix="/api/user")
@@ -43,6 +44,7 @@ def create_app(config_class=Config):
     app.register_blueprint(reply_bp, url_prefix="/api/reply")
     app.register_blueprint(warning_bp, url_prefix="/api/warning")
     app.register_blueprint(admin_bp, url_prefix="/api/admin")
+    app.register_blueprint(dashboard_bp, url_prefix="/api/dashboard")
 
     # 创建数据表（开发阶段）
     with app.app_context():
