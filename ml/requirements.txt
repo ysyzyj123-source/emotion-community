@@ -1,8 +1,12 @@
-transformers==4.44.2
-torch>=2.1.0
-numpy==1.26.4
-pandas==2.2.2
-scikit-learn==1.5.1
-jieba==0.42.1
-gensim==4.3.3
-flask==3.0.3
+# 深度学习推理训练依赖（与 backend 业务环境隔离，独立 venv）
+# 训练/微调 BERT 情感模型
+torch>=2.6.0
+transformers>=4.44.0
+datasets>=2.20.0
+huggingface_hub>=0.24.0
+numpy>=1.26.0
+pandas>=2.2.0
+scikit-learn>=1.5.0
+tokenizers>=0.19.0
+safetensors>=0.4.0
+flask>=3.0.0

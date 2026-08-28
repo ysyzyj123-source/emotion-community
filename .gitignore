@@ -16,6 +16,12 @@ venv/
 *.pth
 *.bin
 *.onnx
+*.safetensors
+
+# ML 模型权重与处理数据（体积大，不入库，用数据/模型管理）
+ml/data/models/
+ml/data/sentiment/processed/
+ml/data/sentiment/raw/
 
 # 数据库
 *.sqlite3
