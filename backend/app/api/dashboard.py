@@ -34,43 +34,43 @@ def _require_viewer():
 @dashboard_bp.get("/sentiment-trend")
 @jwt_required()
 def sentiment_trend():
-    """情感趋势：最近 N 天每天平均情感分值（-10~+10，0 中性）。
+    """情感趋势：每条帖子一个情感点，按发帖时间顺序排列。
 
-    负向为负、正向为正，一条折线反映整体情绪走向。
+    返回所有帖子（post 类型）的 {序号, 时间, 情感分值}，以及全部帖子
+    的平均情感分值。前端用平滑曲线串起各点，并画出平均情感水平线。
     """
     if not _require_viewer():
         return _fail("仅心理辅导老师或管理员可查看", http=403)
 
-    days = request.args.get("days", 7, type=int)
-    days = min(days, 30)
-    since = (datetime.utcnow() - timedelta(days=days - 1))
-    since = since.replace(hour=0, minute=0, second=0, microsecond=0)
+    limit = request.args.get("limit", 50, type=int)
+    limit = min(limit, 200)
 
     rows = (db.session.query(
-                func.date(SentimentResult.create_time).label("day"),
-                func.avg(SentimentResult.valence).label("avg_valence"),
-                func.count().label("cnt"))
-            .filter(SentimentResult.target_type == "post",
-                    SentimentResult.create_time >= since)
-            .group_by("day")
+                SentimentResult.target_id,
+                SentimentResult.valence,
+                SentimentResult.create_time)
+            .filter(SentimentResult.target_type == "post")
+            .order_by(SentimentResult.create_time.asc())
+            .limit(limit)
             .all())
 
-    daily = {}
-    for day, avg_valence, cnt in rows:
-        daily[str(day)] = {"avg": round(avg_valence, 2), "cnt": cnt}
+    points = []
+    valence_values = []
+    for idx, (target_id, valence, create_time) in enumerate(rows, start=1):
+        v = valence if valence is not None else 0.0
+        valence_values.append(v)
+        points.append({
+            "index": idx,
+            "post_id": target_id,
+            "time": create_time.strftime("%Y-%m-%d %H:%M") if create_time else None,
+            "valence": round(v, 2),
+        })
 
-    labels, values, counts = [], [], []
-    for i in range(days):
-        d = (since + timedelta(days=i)).strftime("%Y-%m-%d")
-        labels.append(d)
-        bucket = daily.get(d)
-        values.append(bucket["avg"] if bucket else None)
-        counts.append(bucket["cnt"] if bucket else 0)
+    avg_valence = round(sum(valence_values) / len(valence_values), 2) if valence_values else 0.0
 
     return _ok({
-        "labels": labels,
-        "values": values,
-        "counts": counts,
+        "points": points,
+        "avg": avg_valence,
         "min": -10,
         "max": 10,
     })

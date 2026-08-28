@@ -10,26 +10,34 @@ export default function Dashboard() {
   useEffect(() => {
     getPostStats().then((res) => setStats(res.data)).catch(() => {})
 
-    getSentimentTrend(7).then((res) => {
+    getSentimentTrend().then((res) => {
       const d = res.data
       const chart = echarts.init(trendRef.current)
+      const labels = d.points.map((p) => `#${p.index}`)
+      const values = d.points.map((p) => p.valence)
       chart.setOption({
-        title: { text: '情感趋势（近7天，-10~+10，0中性）' },
-        tooltip: { trigger: 'axis' },
-        xAxis: { type: 'category', data: d.labels },
+        title: { text: '情感趋势（每帖情感分值，-10~+10，0中性）' },
+        tooltip: { trigger: 'axis', formatter: (params) => {
+          const i = params[0].dataIndex
+          const p = d.points[i]
+          return `第${p.index}帖<br/>时间：${p.time}<br/>情感分值：${p.valence}`
+        } },
+        xAxis: { type: 'category', data: labels },
         yAxis: { type: 'value', min: d.min, max: d.max },
         series: [{
-          name: '平均情感分值',
+          name: '情感分值',
           type: 'line',
-          data: d.values,
+          data: values,
           smooth: true,
-          connectNulls: true,
+          symbol: 'circle',
+          symbolSize: 6,
           markLine: {
             silent: true,
             symbol: 'none',
-            data: [{ yAxis: 0 }],
-            lineStyle: { color: '#999', type: 'dashed' },
-            label: { formatter: '中性线', position: 'insideEndTop' },
+            data: [
+              { yAxis: 0, lineStyle: { color: '#999', type: 'dashed' }, label: { formatter: '中性线', position: 'insideEndTop' } },
+              { yAxis: d.avg, lineStyle: { color: '#e6a23c', type: 'solid' }, label: { formatter: `平均 ${d.avg}`, position: 'insideEndBottom' } },
+            ],
           },
         }],
       })
@@ -61,9 +69,9 @@ export default function Dashboard() {
         <span>回复：<b>{stats.replies || 0}</b></span>
         <span>用户：<b>{stats.users || 0}</b></span>
       </div>
-      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-        <div ref={trendRef} style={{ width: 520, height: 320, border: '1px solid #eee', borderRadius: 6 }} />
-        <div ref={topicRef} style={{ width: 400, height: 320, border: '1px solid #eee', borderRadius: 6 }} />
+      <div style={{ display: 'flex', gap: 16, flexDirection: 'column' }}>
+        <div ref={trendRef} style={{ width: '100%', height: 360, border: '1px solid #eee', borderRadius: 6 }} />
+        <div ref={topicRef} style={{ width: 520, height: 300, border: '1px solid #eee', borderRadius: 6 }} />
       </div>
     </div>
   )
