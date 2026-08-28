@@ -6,6 +6,7 @@ import PostList from '../pages/PostList'
 import PostDetail from '../pages/PostDetail'
 import CreatePost from '../pages/CreatePost'
 import Profile from '../pages/Profile'
+import WarningBoard from '../pages/WarningBoard'
 import RequireAuth from '../components/RequireAuth'
 
 const router = createBrowserRouter([
@@ -29,6 +30,7 @@ const router = createBrowserRouter([
       { path: 'post/:id', element: <PostDetail /> },
       { path: 'post/new', element: <CreatePost /> },
       { path: 'profile', element: <Profile /> },
+      { path: 'warning', element: <WarningBoard /> },
     ],
   },
 ])
