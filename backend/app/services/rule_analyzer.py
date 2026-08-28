@@ -38,25 +38,28 @@ def _count_words(text, words):
 
 
 def analyze_sentiment(text: str) -> dict:
-    """返回 {sentiment, emergency, score}。
+    """返回 {sentiment, emergency, score, valence}。
 
-    - sentiment: 正向 / 负向 / 中性
-    - emergency: 正常 / 关注 / 紧急
-    - score: 负面强度 0~1
+    分值 valence 取值 -10~+10：
+      - 负向：负数，越负面越接近 -10
+      - 正向：正数，越正面越接近 +10
+      - 中性：接近 0
     """
     neg = _count_words(text, NEGATIVE_WORDS)
     pos = _count_words(text, POSITIVE_WORDS)
     emergency_hits = _count_words(text, NEGATIVE_EMERGENCY_WORDS)
 
     if emergency_hits > 0:
-        return {"sentiment": "负向", "emergency": "紧急", "score": 1.0}
+        return {"sentiment": "负向", "emergency": "紧急", "score": 1.0, "valence": -10.0}
     if neg > 0:
         emergency = "关注" if neg >= 2 else "正常"
         score = min(0.9, 0.3 + neg * 0.2)
-        return {"sentiment": "负向", "emergency": emergency, "score": round(score, 2)}
+        valence = max(-9.0, -(2.0 + neg * 2.0))
+        return {"sentiment": "负向", "emergency": emergency, "score": round(score, 2), "valence": round(valence, 1)}
     if pos > 0:
-        return {"sentiment": "正向", "emergency": "正常", "score": 0.0}
-    return {"sentiment": "中性", "emergency": "正常", "score": 0.0}
+        valence = min(9.0, 2.0 + pos * 2.0)
+        return {"sentiment": "正向", "emergency": "正常", "score": 0.0, "valence": round(valence, 1)}
+    return {"sentiment": "中性", "emergency": "正常", "score": 0.0, "valence": 0.0}
 
 
 def analyze_topic(text: str) -> dict:

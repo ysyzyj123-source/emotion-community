@@ -13,6 +13,7 @@ class SentimentResult(db.Model):
     sentiment = db.Column(db.String(16))  # 情感倾向：正向/负向
     emergency = db.Column(db.String(16))  # 紧急程度：正常/关注/紧急
     score = db.Column(db.Float, default=0.0)  # 负面强度评分 s
+    valence = db.Column(db.Float, default=0.0)  # 情感分值 -10~+10（0中性）
     create_time = db.Column(db.DateTime, default=datetime.utcnow)
 
 

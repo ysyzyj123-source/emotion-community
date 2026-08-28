@@ -96,6 +96,7 @@ CREATE TABLE IF NOT EXISTS sentiment_result (
   sentiment  VARCHAR(16),
   emergency  VARCHAR(16),
   score      FLOAT DEFAULT 0,
+  valence    FLOAT DEFAULT 0,
   create_time DATETIME DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

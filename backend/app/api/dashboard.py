@@ -34,7 +34,10 @@ def _require_viewer():
 @dashboard_bp.get("/sentiment-trend")
 @jwt_required()
 def sentiment_trend():
-    """情感趋势：最近 N 天每天的正向/负向/中性帖子数量。"""
+    """情感趋势：最近 N 天每天平均情感分值（-10~+10，0 中性）。
+
+    负向为负、正向为正，一条折线反映整体情绪走向。
+    """
     if not _require_viewer():
         return _fail("仅心理辅导老师或管理员可查看", http=403)
 
@@ -45,27 +48,32 @@ def sentiment_trend():
 
     rows = (db.session.query(
                 func.date(SentimentResult.create_time).label("day"),
-                SentimentResult.sentiment,
+                func.avg(SentimentResult.valence).label("avg_valence"),
                 func.count().label("cnt"))
             .filter(SentimentResult.target_type == "post",
                     SentimentResult.create_time >= since)
-            .group_by("day", SentimentResult.sentiment)
+            .group_by("day")
             .all())
 
-    data = {}
-    for day, sentiment, cnt in rows:
-        data.setdefault(str(day), {})[sentiment] = cnt
+    daily = {}
+    for day, avg_valence, cnt in rows:
+        daily[str(day)] = {"avg": round(avg_valence, 2), "cnt": cnt}
 
-    labels, pos, neg, neu = [], [], [], []
+    labels, values, counts = [], [], []
     for i in range(days):
         d = (since + timedelta(days=i)).strftime("%Y-%m-%d")
         labels.append(d)
-        bucket = data.get(d, {})
-        pos.append(bucket.get("正向", 0))
-        neg.append(bucket.get("负向", 0))
-        neu.append(bucket.get("中性", 0))
+        bucket = daily.get(d)
+        values.append(bucket["avg"] if bucket else None)
+        counts.append(bucket["cnt"] if bucket else 0)
 
-    return _ok({"labels": labels, "正向": pos, "负向": neg, "中性": neu})
+    return _ok({
+        "labels": labels,
+        "values": values,
+        "counts": counts,
+        "min": -10,
+        "max": 10,
+    })
 
 
 @dashboard_bp.get("/topic-distribution")

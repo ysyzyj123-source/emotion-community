@@ -67,6 +67,7 @@ def create_post():
         sentiment=senti.get("sentiment"),
         emergency=senti.get("emergency"),
         score=senti.get("score", 0.0),
+        valence=senti.get("valence", 0.0),
     ))
     # 写入话题分析结果
     db.session.add(TopicResult(

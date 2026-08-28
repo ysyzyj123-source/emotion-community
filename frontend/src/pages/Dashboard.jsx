@@ -14,16 +14,24 @@ export default function Dashboard() {
       const d = res.data
       const chart = echarts.init(trendRef.current)
       chart.setOption({
-        title: { text: '情感趋势（近7天）' },
+        title: { text: '情感趋势（近7天，-10~+10，0中性）' },
         tooltip: { trigger: 'axis' },
-        legend: { data: ['正向', '负向', '中性'] },
         xAxis: { type: 'category', data: d.labels },
-        yAxis: { type: 'value' },
-        series: [
-          { name: '正向', type: 'line', data: d['正向'], smooth: true },
-          { name: '负向', type: 'line', data: d['负向'], smooth: true },
-          { name: '中性', type: 'line', data: d['中性'], smooth: true },
-        ],
+        yAxis: { type: 'value', min: d.min, max: d.max },
+        series: [{
+          name: '平均情感分值',
+          type: 'line',
+          data: d.values,
+          smooth: true,
+          connectNulls: true,
+          markLine: {
+            silent: true,
+            symbol: 'none',
+            data: [{ yAxis: 0 }],
+            lineStyle: { color: '#999', type: 'dashed' },
+            label: { formatter: '中性线', position: 'insideEndTop' },
+          },
+        }],
       })
       window.addEventListener('resize', () => chart.resize())
     }).catch(() => {})

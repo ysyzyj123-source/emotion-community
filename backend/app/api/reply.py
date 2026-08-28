@@ -56,6 +56,7 @@ def create_reply(post_id):
         sentiment=senti.get("sentiment"),
         emergency=senti.get("emergency"),
         score=senti.get("score", 0.0),
+        valence=senti.get("valence", 0.0),
     ))
 
     # 积分：回复者 +2；帖子楼主被回复 +3（自己回复自己不重复加）
