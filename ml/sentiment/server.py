@@ -18,7 +18,10 @@ import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
 BASE = os.path.join(os.path.dirname(__file__), "..")
-MODEL_DIR = os.path.join(BASE, "data", "models", "sentiment_bert")
+# 优先使用校园二次微调模型；不存在则回退公开数据模型
+_CAMPUS = os.path.join(BASE, "data", "models", "sentiment_bert_campus")
+_PUBLIC = os.path.join(BASE, "data", "models", "sentiment_bert")
+MODEL_DIR = _CAMPUS if os.path.exists(os.path.join(_CAMPUS, "config.json")) else _PUBLIC
 
 app = Flask(__name__)
 
