@@ -1,0 +1,31 @@
+# 前端
+node_modules/
+dist/
+.env.local
+.env*.local
+
+# 后端
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+
+# 模型重量级文件
+*.pt
+*.pth
+*.bin
+*.onnx
+
+# 数据库
+*.sqlite3
+
+# 本地临时/缓存
+.pipcache/
+.tmp/
+
+# 系统
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
