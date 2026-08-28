@@ -35,7 +35,7 @@ export default function Dashboard() {
             silent: true,
             symbol: 'none',
             data: [
-              { yAxis: 0, lineStyle: { color: '#999', type: 'dashed' }, label: { formatter: '中性线', position: 'insideEndTop' } },
+              { yAxis: 0, lineStyle: { color: '#999', type: 'dashed' }, label: { show: false } },
               { yAxis: d.avg, lineStyle: { color: '#e6a23c', type: 'solid' }, label: { formatter: `平均 ${d.avg}`, position: 'insideEndBottom' } },
             ],
           },
