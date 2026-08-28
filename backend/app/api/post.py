@@ -5,6 +5,7 @@ from flask_jwt_extended import jwt_required
 from .. import db
 from ..models import Post, Category, SentimentResult, TopicResult, WarningRecord
 from ..services.ml_service import analyze_sentiment, analyze_topic
+from ..services.point_service import add_points
 from ..utils.auth_util import current_identity
 from ..models.user import User
 
@@ -84,6 +85,9 @@ def create_post():
         ))
         warning_created = True
 
+    # 发帖积分：发布者 +5
+    add_points(uid, "post", f"发布帖子 #{post.id}")
+
     db.session.commit()
     return _ok({
         "post_id": post.id,
@@ -92,6 +96,7 @@ def create_post():
         "category": topic.get("category"),
         "topic_label": topic.get("topic_label"),
         "warning": warning_created,
+        "points_gained": 5,
     }, "发布成功", http=201)
 
 

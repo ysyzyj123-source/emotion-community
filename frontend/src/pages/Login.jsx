@@ -42,7 +42,7 @@ export default function Login() {
   return (
     <div className="auth-page">
       <div className="auth-card">
-        <h2>大学生情感互助系统</h2>
+        <h2>Empathia · 大学生情感互助系统</h2>
         <div className="role-tabs">
           {ROLES.map((r) => (
             <button

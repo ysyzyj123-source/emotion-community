@@ -1,4 +1,4 @@
-import { Outlet, useNavigate } from 'react-router-dom'
+import { Outlet, useNavigate, Link } from 'react-router-dom'
 import { getAuth, clearAuth } from './store/auth'
 
 export default function App() {
@@ -13,10 +13,10 @@ export default function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <span className="app-title">大学生情感互助系统</span>
+        <Link to="/" style={{ textDecoration: 'none', color: 'inherit' }} className="app-title">Empathia · 大学生情感互助系统</Link>
         {auth && (
           <span className="app-user">
-            {auth.name}（{auth.role === 'student' ? '学生' : auth.role === 'teacher' ? '老师' : '管理员'}）
+            <Link to="/profile" style={{ color: 'inherit' }}>{auth.name}（{auth.role === 'student' ? '学生' : auth.role === 'teacher' ? '老师' : '管理员'}）</Link>
             <button onClick={handleLogout}>退出</button>
           </span>
         )}
