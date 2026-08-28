@@ -10,8 +10,8 @@ from flask import current_app
 from .rule_analyzer import analyze_sentiment as rule_sentiment
 from .rule_analyzer import analyze_topic as rule_topic
 
-# 模型服务请求超时
-TIMEOUT = 5
+# 模型服务请求超时（多任务推理首次加载较慢，放宽到 15s）
+TIMEOUT = 15
 
 
 def analyze_sentiment(text: str) -> dict:
