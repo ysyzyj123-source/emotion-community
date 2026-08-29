@@ -70,6 +70,15 @@ def predict():
     sent_idx = int(torch.argmax(sent_probs))
     emg_idx = int(torch.argmax(emg_probs))
 
+    # 置信度兜底：模型对情感判断"没把握"（最高概率低于阈值）时，
+    # 归为中性/正常/分值0，避免生僻/无上下文内容被乱判成负向或预警。
+    sent_conf = float(max(float(x) for x in sent_probs))
+    emg_conf = float(max(float(x) for x in emg_probs))
+    if sent_conf < SENT_CONF_THRESHOLD:
+        sent_idx = 2  # 中性
+    if emg_conf < EMG_CONF_THRESHOLD:
+        emg_idx = 0  # 正常
+
     # 规则兜底：命中高危自伤关键词则强制判紧急（保证高危不遗漏）
     if HIGH_RISK_WORDS and any(w in text for w in HIGH_RISK_WORDS):
         emg_idx = 2  # 紧急
@@ -133,6 +142,10 @@ HIGH_RISK_WORDS = [
     "自杀", "想死", "结束生命", "轻生", "割腕", "活不下去", "了结",
     "伤害自己", "跳楼", "消失", "不想活", "自残", "自我了结", "想不开",
 ]
+
+# 置信度兜底阈值：情感/紧急的分类最高概率低于该值时，视为"没把握"，归中性/正常
+SENT_CONF_THRESHOLD = 0.60   # 情感三分类最高概率 < 0.60 -> 中性
+EMG_CONF_THRESHOLD = 0.55    # 紧急三分类最高概率 < 0.55 -> 正常
 
 
 if __name__ == "__main__":
