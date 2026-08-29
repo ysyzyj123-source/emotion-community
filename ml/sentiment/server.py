@@ -353,12 +353,67 @@ LLM_CONF_TRIGGER = 0.90
 LLM_CORRECTION_LOG = os.path.join(os.path.dirname(__file__), "..", "data", "sentiment", "llm_corrections.jsonl")
 
 
+# ===== 纠错样本库：相似匹配优先（方案3：不重训，用已纠正样本让模型理解） =====
+_correction_cache = {"loaded": False, "items": []}
+
+
+def load_corrections():
+    """加载纠错样本库（仅首次读取，缓存）。"""
+    if _correction_cache["loaded"]:
+        return _correction_cache["items"]
+    items = []
+    try:
+        if os.path.exists(LLM_CORRECTION_LOG):
+            for line in open(LLM_CORRECTION_LOG, encoding="utf-8"):
+                if line.strip():
+                    items.append(json.loads(line))
+    except Exception:
+        pass
+    _correction_cache["loaded"] = True
+    _correction_cache["items"] = items
+    return items
+
+
+def _char_overlap(a, b):
+    """中文字符重合度：两段文本相同字符/较短文本长度的比例（粗略相似度）。"""
+    sa = set(a); sb = set(b)
+    if not sa or not sb:
+        return 0.0
+    inter = len(sa & sb)
+    return inter / len(sa)
+
+
+def match_correction(text, threshold=0.75):
+    """在纠错样本库中找与当前文本高度相似的样本，返回其已纠正的情感标签。
+    若未命中返回 None。命中则直接采用纠错知识，不再调大模型。
+    """
+    for item in load_corrections():
+        ref = item.get("text", "")
+        if not ref:
+            continue
+        # 相同字符重合度够高，视为相似
+        if _char_overlap(text, ref) >= threshold:
+            label = item.get("sentiment")
+            if label == 0:
+                return "负向"
+            if label == 2:
+                return "中性"
+            if label == 1:
+                return "正向"
+    return None
+
+
 def llm_recheck(text):
-    """调用 DeepSeek 判断该文本是否"真正表达负向情绪"。
+    """先查纠错样本库做相似匹配；未命中才调 DeepSeek 复核。
     返回: "负向"(真负向,保留) / "中性" / "正向"(误判,纠正)
     """
+    # 1) 优先：纠错样本库相似匹配（避免重复调大模型，让模型"理解"已纠正的知识）
+    matched = match_correction(text)
+    if matched:
+        return matched
+
+    # 2) 未命中：调用大模型
     if not DEEPSEEK_API_KEY:
-        # 未配置 API key：跳过，保守返回"负向"（保留 BERT 原判，避免漏高危）
         return "负向"
     prompt = (
         "你是一个情感分析助手。请判断下面这段中文文本是否真正表达了负向情绪"
