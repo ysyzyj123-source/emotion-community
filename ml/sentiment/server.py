@@ -73,7 +73,9 @@ def predict():
     # 规则兜底：命中高危自伤关键词则强制判紧急（保证高危不遗漏）
     if HIGH_RISK_WORDS and any(w in text for w in HIGH_RISK_WORDS):
         emg_idx = 2  # 紧急
-        valence = min(valence, -8.0)  # 高危同时压低情感分值
+
+    # 分级校准：把模型原始 valence 映射到严谨的三级区间
+    valence = calibrate_valence(text, SENT_LABELS[sent_idx], EMG_LABELS[emg_idx], valence)
 
     return jsonify({
         "sentiment": SENT_LABELS[sent_idx],
@@ -82,6 +84,48 @@ def predict():
         "sentiment_probs": {SENT_LABELS[i]: round(float(sent_probs[i]), 4) for i in range(3)},
         "emergency_probs": {EMG_LABELS[i]: round(float(emg_probs[i]), 4) for i in range(3)},
     })
+
+
+# ===== 分级校准：三层情绪强度 =====
+# 三级区间（负面）：轻度抱怨(0~-5)  中度负面(-5~-8)  重度高危(-8~-10)
+# 正向：0~+5 轻度正面 / +5~+10 强烈正面
+INTENSIFIERS = ["很", "特别", "非常", "极度", "超级", "崩溃", "绝望",
+                "痛苦", "受不了", "撑不住", "扛不住", "要死", "极", "巨", "完全"]
+
+
+def calibrate_valence(text, sentiment, emergency, raw_valence):
+    """以模型原始分值为基础，做区间校准（不重写，只修正越界/不合理）。
+
+    原则：尊重模型语义判断，仅把分值约束到与情感倾向/紧急度相符的区间，
+    避免"轻度抱怨被打到 -7"或"高危只给 -3"这类不合理。
+    """
+    # 高危紧急：强制重度区间 [-10,-8.5]
+    if emergency == "紧急":
+        return min(raw_valence, -8.5) if raw_valence < -8 else -9.2
+
+    # 正向
+    if sentiment == "正向":
+        # 反讽检测：表面积极但含消极词/转折 -> 负向
+        if any(w in text for w in ["没事", "挺好", "习惯", "无所谓", "fine", "哈哈", "不在乎", "笑死", "并"]) \
+           and any(w in text for w in ["难过", "消失", "死", "骂", "落", "空", "孤单", "累", "差"]):
+            return -4.0
+        # 正常正向：约束在 [1, +9.5]，强度词上抬
+        v = max(1.0, raw_valence)
+        if any(w in text for w in INTENSIFIERS):
+            v = max(v, 6.0)
+        return min(9.5, v)
+
+    # 负向
+    if sentiment == "负向":
+        v = min(0.0, raw_valence)  # 负向分值不得为正
+        # 轻度抱怨（无高强度词、紧急度为正常）约束到 [-5, 0]
+        if emergency == "正常" and not any(w in text for w in INTENSIFIERS):
+            return max(-5.0, v)
+        # 中度偏重：约束到 [-8, 0]
+        return max(-8.0, v)
+
+    # 中性：贴近 0
+    return round(raw_valence * 0.4, 2)
 
 
 # 高危自伤关键词（规则兜底，命中即紧急）
