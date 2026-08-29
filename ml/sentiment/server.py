@@ -253,16 +253,37 @@ def predict():
     if HIGH_RISK_WORDS and any(w in text for w in HIGH_RISK_WORDS):
         emg_idx = 2  # 紧急
 
+    # ---- 大模型二次筛选：负向且(预警 或 低置信度)时，交给大模型复核，防止误判 ----
+    # 触发：BERT判负向，且 紧急为关注/紧急（预警），或 情感置信度低于触发阈值（低置信度）
+    llm_used = False
+    llm_result = None
+    if sent_idx == 0:  # 负向
+        is_warning = emg_idx in (1, 2)  # 关注/紧急
+        is_low_conf = sent_conf < LLM_CONF_TRIGGER
+        if is_warning or is_low_conf:
+            llm_result = llm_recheck(text)  # 返回 负向/中性/正向
+            llm_used = True
+            if llm_result in ("中性", "正向"):
+                # 大模型判定为误判 -> 纠正
+                new_sent = {"中性": 2, "正向": 1}[llm_result]
+                sent_idx = new_sent
+                emg_idx = 0  # 非负向，紧急归正常
+                # 回写训练集（纠错样本）
+                log_correction(text, "负向", llm_result, emg_idx)
+
     # 分级校准：把模型原始 valence 映射到严谨的三级区间
     valence = calibrate_valence(text, SENT_LABELS[sent_idx], EMG_LABELS[emg_idx], valence)
 
-    return jsonify({
+    result = {
         "sentiment": SENT_LABELS[sent_idx],
         "emergency": EMG_LABELS[emg_idx],
         "valence": round(float(valence), 2),
         "sentiment_probs": {SENT_LABELS[i]: round(float(sent_probs[i]), 4) for i in range(3)},
         "emergency_probs": {EMG_LABELS[i]: round(float(emg_probs[i]), 4) for i in range(3)},
-    })
+        "llm_recheck": llm_used,
+        "llm_result": llm_result,
+    }
+    return jsonify(result)
 
 
 # ===== 分级校准：三层情绪强度 =====
@@ -316,6 +337,67 @@ HIGH_RISK_WORDS = [
 # 置信度兜底阈值：情感/紧急的分类最高概率低于该值时，视为"没把握"，归中性/正常
 SENT_CONF_THRESHOLD = 0.60   # 情感三分类最高概率 < 0.60 -> 中性
 EMG_CONF_THRESHOLD = 0.55    # 紧急三分类最高概率 < 0.55 -> 正常
+
+# ===== 大模型二次筛选（低置信度/高危负向时复核，防止误判并回写训练集） =====
+import requests as _req, json as _json, os as _os
+
+# API key 从环境变量读取（不硬编码进 git 仓库，避免泄露；部署时设置 DEEPSEEK_API_KEY）
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
+if not DEEPSEEK_API_KEY:
+    print("[警告] 未设置 DEEPSEEK_API_KEY 环境变量，大模型二次筛选将跳过（仅 BERT 判断）")
+DEEPSEEK_URL = "https://api.deepseek.com/chat/completions"
+DEEPSEEK_MODEL = "deepseek-chat"
+# 触发阈值：负向且情感置信度低于该值 -> 复核；负向且预警(关注/紧急) -> 复核
+LLM_CONF_TRIGGER = 0.90
+# 回写训练集路径
+LLM_CORRECTION_LOG = os.path.join(os.path.dirname(__file__), "..", "data", "sentiment", "llm_corrections.jsonl")
+
+
+def llm_recheck(text):
+    """调用 DeepSeek 判断该文本是否"真正表达负向情绪"。
+    返回: "负向"(真负向,保留) / "中性" / "正向"(误判,纠正)
+    """
+    if not DEEPSEEK_API_KEY:
+        # 未配置 API key：跳过，保守返回"负向"（保留 BERT 原判，避免漏高危）
+        return "负向"
+    prompt = (
+        "你是一个情感分析助手。请判断下面这段中文文本是否真正表达了负向情绪"
+        "（如难过、焦虑、痛苦、绝望、愤怒等）。"
+        "注意：纯客观陈述、日常描述、中性叙事、无情绪内容不属于负向。\n"
+        f"文本：{text}\n"
+        "请只回答一个词：负向 / 中性 / 正向"
+    )
+    try:
+        resp = _req.post(DEEPSEEK_URL, headers={
+            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+            "Content-Type": "application/json",
+        }, json={
+            "model": DEEPSEEK_MODEL,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.0,
+            "max_tokens": 8,
+        }, timeout=20)
+        content = resp.json()["choices"][0]["message"]["content"].strip()
+        if "中性" in content:
+            return "中性"
+        if "正向" in content:
+            return "正向"
+        return "负向"
+    except Exception as e:
+        # 调用失败时保守处理：保留 BERT 原判（负向不轻易改，避免漏高危）
+        return "负向"
+
+
+def log_correction(text, orig_sent, llm_sent, orig_emg):
+    """把大模型复核结果写回训练集（纠正样本），用于后续数据增强重训。"""
+    label = {"负向": 0, "中性": 2, "正向": 1}.get(llm_sent, 0)
+    rec = {"text": text, "sentiment": label, "emergency": orig_emg,
+           "valence": 0.0, "source": "llm_correction"}
+    try:
+        with open(LLM_CORRECTION_LOG, "a", encoding="utf-8") as f:
+            f.write(_json.dumps(rec, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":
