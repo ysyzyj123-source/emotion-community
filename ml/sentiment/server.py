@@ -48,6 +48,165 @@ def load_model():
     print(f"多任务模型已加载，设备: {device}")
 
 
+# 中文字符范围（用来判断文本是否"真的说了话"）
+import re as _re
+_CJK = _re.compile(r'[\u4e00-\u9fff]')
+_LETTER = _re.compile(r'[A-Za-z]')
+
+# 学术/专业中性陈述词（含这类词且无情绪词 -> 判断性陈述，归中性）
+ACADEMIC_WORDS = [
+    "研究", "系统", "基于", "算法", "设计", "实现", "模型", "分析",
+    "架构", "开发", "流程", "模块", "数据库", "接口", "程序", "数据",
+    "本项目", "论文", "章节", "文献", "实验", "测试", "方案", "功能",
+]
+# 情绪词（含情绪词则不是纯学术陈述，不归中性）
+EMOTION_WORDS = [
+    "难过", "开心", "高兴", "快乐", "幸福", "焦虑", "担心", "痛苦",
+    "崩溃", "煎熬", "失眠", "烦躁", "郁闷", "生气", "绝望", "累",
+    "爱", "喜欢", "恨", "想死", "自杀", "哭", "笑", "烦", "抗",
+]
+
+def is_repetitive_spam(text):
+    """检测重复刷屏：去掉重复后句子过短（字符数 < 原始的30% 且原始长度>20）-> 视为刷屏。"""
+    if len(text) < 20:
+        return False
+    # 去掉所有重复字符后的核心
+    uniq = "".join(dict.fromkeys(text))  # 仅保留首次出现字符
+    shorter = text[:80]
+    # 统计出现>=3次的字符占比
+    from collections import Counter
+    cnt = Counter(shorter)
+    repeats = sum(1 for ch, c in cnt.items() if c >= 3)
+    # 若大量字符重复且有效中文少 -> 刷屏
+    if repeats >= 3 and len(uniq) < max(5, len(shorter) // 3):
+        return True
+    # 单一短语重复（如"哈哈哈""今天太好了"...）
+    # 取前6字，若全文本由该短语组成
+    prefix6 = shorter[:6]
+    if len(shorter) >= 18 and shorter.count(prefix6) >= 3:
+        return True
+    return False
+
+
+def is_academic_neutral(text):
+    """检测学术/专业中性陈述：含学术词 且 无情绪词 -> 判中性（避免学术描述被误判负向关注）。"""
+    has_aca = any(w in text for w in ACADEMIC_WORDS)
+    has_emo = any(w in text for w in EMOTION_WORDS)
+    return has_aca and not has_emo
+
+
+# 情绪词（含情绪词则不是纯客观陈述，保持模型判断，不归中性）
+# 注意：只放真正的情绪词，不放"很/太/真的"等程度副词（否则几乎所有句子都含，规则失效）
+EMOTION_WORDS = [
+    # 负向情绪
+    "难过", "伤心", "痛苦", "悲伤", "沮丧", "绝望", "烦躁", "郁闷", "焦虑",
+    "担心", "害怕", "恐惧", "紧张", "崩溃", "煎熬", "委屈", "失落", "孤独",
+    "寂寞", "空虚", "无助", "迷茫", "困惑", "纠结", "讨厌", "恨", "生气",
+    "愤怒", "气死", "倒霉", "糟糕", "难受", "心痛", "失眠", "睡不着", "哭",
+    "流泪", "叹气", "压力大", "想哭", "好烦", "好累", "emo", "抑郁", "烦死",
+    # 正向情绪
+    "开心", "高兴", "快乐", "幸福", "激动", "兴奋", "喜悦", "满足", "欣慰",
+    "温暖", "感动", "喜欢", "爱", "舒服", "爽", "美好", "甜蜜", "幸福",
+    "成功", "上岸", "幸运", "感恩", "感谢", "高兴坏了", "骄傲",
+]
+
+# 客观陈述/日程/事实类词（含这些且无情绪/网络梗/反问词才判中性）
+# 涵盖：上课、日程、吃饭、交通、天气、物品、工作、场所等客观场景词
+DESCRIPTIVE_WORDS = [
+    # 日程/上课
+    "上课", "下课", "自习", "听课", "讲座", "考试", "作业", "自习", "开会",
+    "开会", "周报", "汇报", "项目", "论文", "课程", "实验", "图书馆",
+    # 日常/吃饭
+    "吃饭", "食堂", "外卖", "早餐", "午餐", "晚餐", "做饭", "点餐", "点外卖",
+    # 交通/出行
+    "地铁", "公交", "打车", "火车", "飞机", "到站", "出发", "坐车", "骑车", "走路",
+    # 天气
+    "下雨", "下雪", "晴天", "阴天", "刮风", "降温", "天气", "温度",
+    # 物品/生活
+    "快递", "取包裹", "买东西", "超市", "购物", "睡觉", "起床", "洗漱",
+    "跑步", "散步", "健身", "锻炼", "打球", "唱歌", "玩", "休息",
+    # 工作/事务
+    "报", "写", "做", "买了", "更新", "版本", "功能", "配置",
+    # 影视/推荐/分享
+    "美剧", "电影", "剧", "视频", "看的", "推荐", "好看",
+]
+
+# 高危自伤词（含则绝不判中性，保证预警）
+HIGH_RISK_ALL = [
+    "自杀", "想死", "结束生命", "轻生", "割腕", "活不下去", "了结",
+    "伤害自己", "跳楼", "消失", "不想活", "自残", "自我了结", "想不开", "死",
+]
+
+# 网络梗/情绪化表达词（含这些绝不判中性，避免误伤真实情绪）
+SLANG_EMOTION = [
+    "麻了", "栓Q", "起飞", "破防", "emo", "绷不住了", "yyds", "绝了",
+    "笑死", "谁懂", "家人们", "泪目", "上头", "裂开", "摆烂", "躺平",
+    "内卷", "卷死", "佛了", "我好", "我人", "我麻", "做错", "这样对我",
+    "老天", "天呐", "天哪", "救命", "无语", "昏迷",
+]
+# 反问/感叹符号（含则说明有情绪色彩，不判中性）
+RHETORIC_MARK = ["？", "?", "！", "!", "~", "～"]
+
+
+def is_descriptive_neutral(text):
+    """客观陈述/日程记录 -> 判中性。
+
+    收紧条件：仅当满足以下全部才判中性，避免误伤真实情绪：
+      - 文本长度 >= 8 字（太短交给模型）
+      - 含客观陈述词（上课/吃饭/开会/下雨/坐车等日程/事实类）
+      - 不含情绪词、网络梗、反问/感叹号（这些说明有情绪色彩）
+      - 不含高危词
+    """
+    if len(text) < 8:
+        return False
+    if any(w in text for w in RHETORIC_MARK):
+        return False
+    if any(w in text for w in EMOTION_WORDS):
+        return False
+    if any(w in text for w in SLANG_EMOTION):
+        return False
+    if any(w in text for w in HIGH_RISK_ALL):
+        return False
+    # 含客观陈述词（日程/事实/描述类）才判中性
+    has_desc = any(w in text for w in DESCRIPTIVE_WORDS)
+    return has_desc
+
+
+def clean_and_detect(text):
+    """预处理：
+    1. 纯符号/无意义文本（有效字母<3）-> 判中性
+    2. 重复刷屏（连续重复短语）-> 判中性
+    3. 学术/专业中性陈述（含学术词且无情绪词）-> 判中性
+    4. 客观陈述/推荐（无情绪词且无高危词）-> 判中性
+    返回 (清理后文本, 是否判定中性)。
+    """
+    text = _re.sub(r'\s+', ' ', text).strip()
+    zh = len(_CJK.findall(text))
+    en = len(_LETTER.findall(text))
+    total_letters = zh + en
+    if total_letters < 3:
+        return text, True
+    if is_repetitive_spam(text):
+        return text, True
+    if is_academic_neutral(text):
+        return text, True
+    # 客观陈述/推荐/分享（无情绪词且无高危词）-> 中性
+    if is_descriptive_neutral(text):
+        return text, True
+    return text, False
+
+
+def trunk_long_text(text, max_chars=180):
+    """超长文本改进截断：取开头和结尾各约一半，避免只留前段丢失语义。
+    BERT max_length=128 token，中文约128字；这里先按字符数粗截，
+    长文本取首尾各半，保证语义完整。
+    """
+    if len(text) <= max_chars:
+        return text
+    half = max_chars // 2
+    return text[:half] + text[-half:]
+
+
 @app.post("/predict")
 def predict():
     data = request.get_json() or {}
@@ -55,6 +214,17 @@ def predict():
     if not text:
         return jsonify({"error": "text is empty"}), 400
 
+    # ---- 预处理：纯符号/无意义文本 -> 直接判中性（避免误报预警）----
+    cleaned, is_noisy = clean_and_detect(text)
+    if is_noisy:
+        return jsonify({
+            "sentiment": "中性", "emergency": "正常", "valence": 0.0,
+            "sentiment_probs": {"负向": 0.0, "正向": 0.0, "中性": 1.0},
+            "emergency_probs": {"正常": 1.0, "关注": 0.0, "紧急": 0.0},
+        })
+
+    # ---- 超长文本改进截断：首尾各半采样（避免只取前段丢失语义）----
+    text = trunk_long_text(text)
     inputs = tokenizer(text, truncation=True, padding=True, max_length=128, return_tensors="pt")
     inputs = {k: v.to(device) for k, v in inputs.items()}
     with torch.no_grad():
